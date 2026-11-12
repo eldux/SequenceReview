@@ -63,6 +63,7 @@ The importer understands folders such as `sequence_0001/*.jpg`, `images/sequence
 - In **Sequence reviewer**, select frames and move them to an existing or new sequence. Mark a sequence reviewed when you finish.
 - In **Sequence table**, click **Join from** and **Join into** on the desired rows, then confirm the join. Click any image to open it in a same-tab viewer.
 - Open a sequence from its table row to inspect it. **Back to table** restores the search, scroll position, and horizontal frame-strip positions in that tab.
+- Frames with the same visible number keep separate file identities. Repeated numbers display a short filename suffix or a variant number. Hover over a thumbnail to see its full filename.
 - If an imported manifest records a conflicting street separation, review the reason and choose **Cancel** or **Override and continue**. Overrides are recorded in the workspace catalog.
 - Under **Folders / export**, enter a new folder name and click **Export images and labels**. The tool writes an organized copy with `images/sequence_####/`, matched `labels/sequence_####/`, and `sequence_review_export.json` mapping back to source frames. If an input image has no label, it is exported as an image only. Duplicate filenames in one sequence receive a suffix, which is also applied to the matching label.
 

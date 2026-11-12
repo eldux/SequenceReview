@@ -66,7 +66,8 @@ main{padding:12px 18px}#status{color:#bacbd9}#big{display:flex;justify-content:c
 .detail-view #selectedName{font-size:12px;color:#bacbd9}
 .detail-view #sequenceNote{min-width:0}
 .detail-view #hint{font-size:11px;padding:0 3px}
-.detail-view #selectedName,.detail-view #tableView{white-space:nowrap}
+.detail-view #selectedName{overflow-wrap:anywhere}
+.detail-view #tableView{white-space:nowrap}
 .detail-view #frames{display:flex;overflow-x:auto;gap:8px;padding:2px 2px 5px;overscroll-behavior-x:contain}
 .detail-view #frames .frame{flex:0 0 156px}
 .detail-view #frames .frame img{display:block;height:88px;aspect-ratio:auto}
@@ -190,6 +191,7 @@ const accessFragment='';
 let externalJobId='';
 let viewKey='nienaber-sequence-outlier-position-'+(solo?'solo':'multi');
 let stripOffsets={};
+let frameLabelData,frameLabels=new Map();
 async function api(path,body){
  const response=await fetch(path,{method:body?'POST':'GET',headers:{'X-Review-Token':token,...(data?{'X-Review-Workspace':data.sequence_numbering_version}:{}),...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined});
  const result=await response.json();if(!response.ok)throw Error(result.error);return result;
@@ -230,6 +232,26 @@ async function runEdit(payload){
   }
   await new Promise(resolve=>setTimeout(resolve,250));
  }
+}
+function frameLabel(frame){
+ if(frameLabelData!==data){
+  frameLabelData=data;frameLabels=new Map();
+  const byNumber=new Map();
+  for(const sequence of data.sequences){
+   for(const item of sequence.frames){
+    if(!byNumber.has(item.original))byNumber.set(item.original,[]);
+    byNumber.get(item.original).push(item);
+   }
+  }
+  for(const [number,variants] of byNumber){
+   if(variants.length<2)continue;
+   variants.sort((a,b)=>a.id.localeCompare(b.id));
+   const suffixes=variants.map(item=>item.name.match(/\.rf\.([a-z0-9]{8})/i)?.[1]);
+   const useHash=suffixes.every(Boolean)&&new Set(suffixes).size===variants.length;
+   variants.forEach((item,index)=>frameLabels.set(item.id,number+' · '+(useHash?suffixes[index]:'variant '+(index+1))));
+  }
+ }
+ return frameLabels.get(frame.id)||frame.original;
 }
 function url(frame,thumb=false){return '/image?id='+encodeURIComponent(frame.id)+'&token='+encodeURIComponent(token)+(thumb?'&thumb=1':'');}
 function originalUrl(frame){return url(frame)+'&full=1';}
@@ -289,7 +311,8 @@ function selectFrame(index){
  frameIndex=Math.max(0,Math.min(index,sequence.frames.length-1));
  const frame=sequence.frames[frameIndex];
  $('mainImage').src=url(frame);
- $('selectedName').textContent=(frameIndex+1)+' / '+sequence.frames.length+' · '+frame.original;
+ $('selectedName').textContent=(frameIndex+1)+' / '+sequence.frames.length+' · '+frameLabel(frame);
+ $('selectedName').title=frame.name;
  linkViewer($('original'),frame);
  $('previousFrame').disabled=!frameIndex;$('nextFrame').disabled=frameIndex+1>=sequence.frames.length;
  document.querySelectorAll('.frame').forEach(card=>{
@@ -308,7 +331,7 @@ function card(sequence,frame){
  const image=new Image();image.loading='lazy';image.src=url(frame,true);image.alt=frame.original;
  image.onclick=()=>{if(solo)openViewer(frame);else selectFrame(sequence.frames.findIndex(f=>f.id===frame.id));};
  const caption=document.createElement('div');caption.className='caption';
- caption.textContent=(solo?sequence.id+' · '+sequence.group+' · ':'')+frame.original+' · '+(frame.name.split('.rf.')[1]||frame.name).slice(0,8);caption.title=frame.name;
+ caption.textContent=(solo?sequence.id+' · '+sequence.group+' · ':'')+frameLabel(frame);caption.title=frame.name;
  item.append(image,caption);
  if(solo){
   const details=document.createElement('a');
@@ -431,7 +454,7 @@ function tableFrame(frame){
  link.title=frame.name+' · Open original';
  const preview=new Image();preview.loading='lazy';preview.decoding='async';preview.src=url(frame,true);
  preview.alt=frame.name;
- const caption=document.createElement('small');caption.textContent=frame.original;
+ const caption=document.createElement('small');caption.textContent=frameLabel(frame);
  link.append(preview,caption);return link;
 }
 function setJoin(role,id){
