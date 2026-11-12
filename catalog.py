@@ -67,10 +67,46 @@ def sequence_id(number):
     return f'sequence_{number:04d}'
 
 
+class SeparationConflict(ValueError):
+    def __init__(self, token, rules):
+        super().__init__('The edit conflicts with an existing street separation.')
+        self.token = token
+        self.reasons = sorted({rule['reason'] for rule in rules})
+
+
 class Catalog:
     def __init__(self, root, state_dir, key, document):
         self.root, self.state_dir, self.key, self.document = root, state_dir, key, document
         self.path = state_dir / (key + '.json')
+
+    def import_separations(self):
+        if 'cannot_link' in self.document:
+            return
+        doc = deepcopy(self.document)
+        doc['cannot_link'] = []
+        source = within(self.root, doc['folder'])
+        manifest = read(source/'grouping_manifest.json', {}) if doc['mode']=='open' else {}
+        if isinstance(manifest, dict) and {'records','pairs'} <= manifest.keys():
+            images = {frame['path']:key for key,frame in doc['frames'].items()}
+            representatives = {}
+            sequence_groups = {}
+            for pair in manifest['pairs']:
+                record = manifest['records'][pair['record']]
+                image = within(source, pair['output_image'].replace('\\','/'))
+                key = images.get(image.relative_to(self.root).as_posix())
+                original_id = record.get('original_id')
+                if key and original_id and (original_id not in representatives or record.get('filename')==image.name):
+                    representatives[original_id] = key
+                if record.get('keep_together_group'):
+                    sequence_groups[record['sequence_id']] = record['keep_together_group']
+            for sequence in doc['sequences'].values():
+                sequence['group'] = sequence_groups.get(sequence['group'],sequence['group'])
+            for rule in manifest.get('cannot_link',[]):
+                left = sorted({representatives[i] for i in rule['left'] if i in representatives})
+                right = sorted({representatives[i] for i in rule['right'] if i in representatives})
+                if left and right:
+                    doc['cannot_link'].append({'left':left,'right':right,'reason':rule['reason']})
+        self.commit(doc)
 
     @classmethod
     def open(cls, root, state_dir, folder, mode, numeric, progress):
@@ -81,7 +117,9 @@ class Catalog:
         key = hashlib.sha256(f'{relative}\0{mode}\0{numeric}'.encode()).hexdigest()[:24]
         existing = read(state_dir / (key + '.json'))
         if existing is not None:
-            return cls(root, state_dir, key, existing)
+            catalog = cls(root, state_dir, key, existing)
+            catalog.import_separations()
+            return catalog
 
         progress(5, 'Reading image and label paths')
         groups = defaultdict(list)
@@ -136,7 +174,7 @@ class Catalog:
                     'sequences': sequences, 'aliases': {}, 'revision': 0,
                     'flags': {'images': {}, 'sequences': {}}, 'next_id': next_id}
         catalog = cls(root, state_dir, key, document)
-        catalog.commit(document)
+        catalog.import_separations()
         return catalog
 
     def commit(self, document):
@@ -173,6 +211,29 @@ class Catalog:
             sequences[target] = {'group': sequences[source]['group'], 'frames': []}
         elif not isinstance(target, str) or target == source or target not in sequences:
             raise ValueError('Choose a different destination sequence.')
+        before = {i:sequence['group'] for sequence in self.document['sequences'].values() for i in sequence['frames']}
+        after = {**before, **dict.fromkeys(selected,sequences[target]['group'])}
+        conflicts, preserved = [], []
+        for rule in doc['cannot_link']:
+            partitions = defaultdict(list)
+            for left in rule['left']:
+                conflicts_with = tuple(right for right in rule['right']
+                                       if before[left]!=before[right] and after[left]==after[right])
+                partitions[conflicts_with].append(left)
+            for conflicting, left in partitions.items():
+                if conflicting:
+                    conflicts.append({**rule,'left':left,'right':list(conflicting)})
+                right = [i for i in rule['right'] if i not in conflicting]
+                if right:
+                    preserved.append({**rule,'left':left,'right':right})
+        if conflicts:
+            token = hashlib.sha256(json.dumps([self.key,doc['revision'],source,target,sorted(selected),conflicts],
+                                              sort_keys=True).encode()).hexdigest()
+            if payload.get('separation_override')!=token:
+                raise SeparationConflict(token,conflicts)
+            doc['cannot_link'] = preserved
+            doc.setdefault('separation_overrides',[]).append({'source':source,'destination':target,
+                                                              'revision':doc['revision']+1,'rules':conflicts})
         for i in selected:
             frame = doc['frames'][i]
             if not within(self.root, frame['path']).is_file() or (frame['label'] and not within(self.root, frame['label']).is_file()):

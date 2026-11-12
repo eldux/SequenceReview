@@ -14,7 +14,7 @@ from urllib.parse import parse_qs, urlsplit
 from zipfile import ZipFile, ZIP_DEFLATED
 
 from PIL import Image, ImageOps
-from catalog import Catalog, natural, read, within, write
+from catalog import Catalog, SeparationConflict, natural, read, within, write
 
 APP = Path(__file__).resolve().parent
 
@@ -38,6 +38,7 @@ class Service:
         key = read(self.state/'current.json',{}).get('key')
         if key and (document := read(self.state/(key+'.json'))) is not None:
             self.current = Catalog(self.root,self.state,key,document)
+            self.current.import_separations()
 
     def current_catalog(self, expected=None):
         current = self.current
@@ -90,6 +91,8 @@ class Service:
                             target = catalog.export(self.exports,payload.get('name'),progress)
                             message = f'Exported to {target}'
                 update(state='done',percent=100,message=message,destination=target)
+            except SeparationConflict as error:
+                update(state='conflict',message=str(error),reasons=error.reasons,separation_override=error.token)
             except Exception as error:
                 update(state='failed',message=str(error) or 'The job failed.')
 

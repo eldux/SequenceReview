@@ -88,6 +88,11 @@ main{padding:12px 18px}#status{color:#bacbd9}#big{display:flex;justify-content:c
 #viewerImage{display:block;cursor:zoom-in}
 #viewerImage.zoomed{cursor:zoom-out}
 #closeViewer{position:absolute;top:12px;right:16px;z-index:1}
+#separationDialog{width:min(480px,calc(100% - 28px));color:#e8edf3;background:#192634;border:1px solid #668096;border-radius:8px;padding:18px}
+#separationDialog::backdrop{background:#080d13b8}
+#separationDialog h2{font-size:18px;margin:0 0 8px}
+#separationDialog ul{padding-left:22px}
+#separationDialog .controls{justify-content:flex-end;margin-bottom:0}
 </style>
 <header><h1 id="title">Nienaber sequence review</h1>
 <div id="reviewNavigation" class="controls"><input id="search" aria-label="Find sequence or image ID" placeholder="Find sequence or image ID"><select id="sequenceSelect"></select>
@@ -150,6 +155,15 @@ main{padding:12px 18px}#status{color:#bacbd9}#big{display:flex;justify-content:c
 <div id="viewerScroll"><div id="viewerStage"><img id="viewerImage" alt=""></div></div>
 <button id="closeViewer" aria-label="Close image viewer">Close · Esc</button>
 </dialog>
+<dialog id="separationDialog" aria-labelledby="separationHeading">
+<form method="dialog">
+<h2 id="separationHeading">Existing street separation</h2>
+<p>This edit conflicts with a saved decision to keep these frames separate.</p>
+<ul id="separationReasons"></ul>
+<p>Override applies this edit and removes the part of the separation rule that conflicts with it.</p>
+<div class="controls"><button value="cancel" autofocus>Cancel</button><button value="override" class="danger">Override and continue</button></div>
+</form>
+</dialog>
 <script>
 const token='__REVIEW_TOKEN__';
 const solo=location.pathname==='/singletons';
@@ -183,6 +197,18 @@ function showEditProgress(job){
  $('editProgressMessage').textContent=job.message+(job.state==='running'?' · '+job.percent+'%':'');
  $('editProgressMessage').className=job.state==='failed'?'error':'';
 }
+class EditCancelled extends Error{}
+function confirmSeparationOverride(reasons){
+ const dialog=$('separationDialog');
+ $('separationReasons').replaceChildren(...reasons.map(reason=>{
+  const item=document.createElement('li');item.textContent=reason;return item;
+ }));
+ dialog.returnValue='cancel';
+ return new Promise(resolve=>{
+  dialog.addEventListener('close',()=>resolve(dialog.returnValue==='override'),{once:true});
+  dialog.showModal();
+ });
+}
 async function runEdit(payload){
  showEditProgress({state:'running',percent:0,message:'Submitting sequence edit'});
  const {id}=await api('/api/edit',payload);
@@ -190,6 +216,10 @@ async function runEdit(payload){
   const job=await api('/api/edit-status?id='+encodeURIComponent(id));
   if(!job)throw Error('The server lost the edit status. Reload to check the saved sequences.');
   showEditProgress(job);
+  if(job.state==='conflict'){
+   if(!await confirmSeparationOverride(job.reasons))throw new EditCancelled();
+   return runEdit({...payload,separation_override:job.separation_override});
+  }
   if(job.state==='failed')throw Error(job.message);
   if(job.state==='done'){
    const [data,flags]=await Promise.all([api('/api/data'),api('/api/flags')]);
@@ -345,7 +375,11 @@ async function editSequence(type){
   $('search').value='';filter();
   position=visible.findIndex(sequence=>sequence.id===result.destination);render();
   $('saveState').textContent='Saved to '+result.destination;
- }catch(error){$('saveState').textContent=error.message;$('saveState').className='error';$('editProgress').hidden=true;}
+ }catch(error){
+  const cancelled=error instanceof EditCancelled;
+  $('saveState').textContent=cancelled?'Edit cancelled':error.message;
+  $('saveState').className=cancelled?'':'error';$('editProgress').hidden=true;
+ }
  finally{
   editing=false;saving--;updateEditControls();
   document.querySelector('main').inert=false;
@@ -455,7 +489,8 @@ $('tableJoin').onclick=async()=>{
  }catch(error){
   if(sourceRow)sourceRow.hidden=false;
   $('pendingJoinPreview')?.remove();$('editProgress').hidden=true;
-  status.textContent=error.message;status.className='error';
+  const cancelled=error instanceof EditCancelled;
+  status.textContent=cancelled?'Join cancelled':error.message;status.className=cancelled?'':'error';
  }
  finally{editing=false;saving--;updateTableJoin();$('sequenceTable').inert=false;$('search').disabled=false;}
 };

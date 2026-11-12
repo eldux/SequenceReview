@@ -46,6 +46,7 @@ The importer understands folders such as `sequence_0001/*.jpg`, `images/sequence
 
 - In **Sequence reviewer**, select frames and move them to an existing or new sequence. Flag frames or mark a sequence reviewed.
 - In **Sequence table**, click **Join from** and **Join into** on the desired rows, then confirm the join. Click any image to open it in a same-tab viewer.
+- If an imported manifest records a conflicting street separation, review the reason and choose **Cancel** or **Override and continue**. Overrides are recorded in the workspace catalog.
 - Under **Folders / export**, enter a new folder name and click **Export images and labels**. The tool writes an organized copy with `images/sequence_####/`, matched `labels/sequence_####/`, and `sequence_review_export.json` mapping back to source frames. If an input image has no label, it is exported as an image only. Duplicate filenames in one sequence receive a suffix, which is also applied to the matching label.
 
 The input mount is read-only. Joins, moves, flags, and notes are stored in the workspace catalog in the `review-state` volume and reflected in the exported copy. Reopening the same folder with the same workflow and filename setting resumes that catalog. The model cache is stored in the `model-cache` volume.
