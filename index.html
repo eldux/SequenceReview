@@ -1,0 +1,145 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sequence Review</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#121b25;color:#e8edf3;font:15px system-ui}
+main{max-width:780px;margin:auto;padding:26px 18px}h1{font-size:26px;margin:0 0 18px}
+h2{font-size:16px;margin:0 0 12px}a{color:#96dcff}
+section,fieldset{background:#192634;border:1px solid #486075;border-radius:7px;padding:14px;margin:0 0 12px;min-width:0}
+fieldset{padding:8px 12px;margin-top:12px}legend{padding:0 4px;color:#b6c9db}
+label{display:block;margin:6px 0}button,input,select{font:inherit}
+button,input:not([type=radio]),select{border:1px solid #668096;border-radius:5px;padding:6px 9px;background:#24384b;color:#edf6ff}
+button{cursor:pointer}button:disabled{opacity:.45;cursor:default}
+.primary{background:#086f73}small{color:#b6c9db}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+#folders{width:100%;margin:8px 0}#folderPath{overflow-wrap:anywhere}#status{min-height:1.5em}
+.error{color:#ff929b}[hidden]{display:none!important}footer{color:#b6c9db;font-size:13px}
+</style>
+<main>
+<h1>Sequence Review</h1>
+<section id="active" hidden>
+<h2>Current workspace</h2>
+<p id="activePath"></p>
+<div class="row"><a href="/review">Resume review</a><a href="/table">Sequence table</a></div>
+<form id="export" class="row" style="margin-top:10px">
+<label for="exportName">Export folder name</label>
+<input id="exportName" required pattern="[A-Za-z0-9][A-Za-z0-9._-]{0,79}" placeholder="reviewed-sequences">
+<button>Export images and labels</button>
+</form>
+</section>
+<section>
+<h2>Open a folder</h2>
+<div class="row"><button id="up" type="button">↑ Parent folder</button><strong id="folderPath">/data</strong></div>
+<select id="folders" size="7" aria-label="Mounted folders"></select>
+<button id="browse" type="button">Browse selected folder</button>
+<form id="open">
+<fieldset>
+<legend>Workflow</legend>
+<label><input type="radio" name="mode" value="open" checked> Open existing sequences</label>
+<label><input type="radio" name="mode" value="sequence"> Sequence a folder of images</label>
+<fieldset id="numberChoice" hidden>
+<legend>Use filename numbers as sequence clues?</legend>
+<label><input type="radio" name="numbers" value="yes"> Yes, consider nearby frame numbers and verify visually</label>
+<label><input type="radio" name="numbers" value="no"> No, use image content only</label>
+</fieldset>
+</fieldset>
+<div class="row">
+<label for="start">Start at</label>
+<select id="start"><option value="resume">Last position</option><option value="unreviewed">First unreviewed</option>
+<option value="first">First sequence</option><option value="specific">Sequence number</option></select>
+<input id="startId" placeholder="e.g. 0012" aria-label="Sequence number" hidden>
+<button class="primary">Open this folder</button>
+</div>
+</form>
+</section>
+<progress id="progress" max="100" value="0" hidden aria-label="Background job progress"></progress>
+<p id="status" role="status"></p>
+<footer>Sequence Review · GNU AGPL v3.0 only · Provided without warranty.
+<a href="/license">License</a> · <a href="/source" download="sequence-review-source.zip">Download source</a></footer>
+</main>
+<script>
+const token='__REVIEW_TOKEN__';
+const $=id=>document.getElementById(id);
+let currentFolder='.',parentFolder=null,busy=false;
+async function api(path,body){
+ const response=await fetch(path,{method:body?'POST':'GET',headers:{'X-Review-Token':token,'Content-Type':'application/json'},
+  body:body?JSON.stringify(body):undefined});
+ const result=await response.json();
+ if(!response.ok)throw Error(result.error);
+ return result;
+}
+function report(message,error=false){$('status').textContent=message;$('status').classList.toggle('error',error);}
+async function browse(folder){
+ const data=await api('/api/folders?folder='+encodeURIComponent(folder));
+ currentFolder=data.folder;parentFolder=data.parent;
+ $('folderPath').textContent='/data'+(currentFolder==='.'?'':'/'+currentFolder);
+ $('up').disabled=parentFolder===null;
+ $('folders').replaceChildren(...data.folders.map(path=>new Option(path.split('/').at(-1),path)));
+ $('active').hidden=data.active===null;
+ $('activePath').textContent=data.active===null?'':'/data/'+data.active;
+}
+function showJob(job){
+ $('progress').hidden=false;$('progress').value=job.percent;
+ report(job.message+(job.state==='running'?' · '+job.percent+'%':''),job.state==='failed');
+}
+async function waitFor(id){
+ for(;;){
+  const job=await api('/api/edit-status?id='+encodeURIComponent(id));
+  if(!job)throw Error('This job is no longer available. Check the current workspace.');
+  showJob(job);
+  if(job.state!=='running')return job;
+  await new Promise(resolve=>setTimeout(resolve,500));
+ }
+}
+async function submit(path,body,destination){
+ if(busy)return;
+ busy=true;document.querySelectorAll('section').forEach(node=>node.inert=true);
+ try{
+  report('Submitting…');
+  const {id}=await api(path,body);
+  const job=await waitFor(id);
+  if(job.state==='done'&&destination)location.assign(destination);
+  else if(job.state==='done')await browse(currentFolder);
+ }catch(error){report(error.message,true);}
+ finally{busy=false;document.querySelectorAll('section').forEach(node=>node.inert=false);}
+}
+function follow(folder){if(folder!==null&&folder!=='')browse(folder).catch(error=>report(error.message,true));}
+$('up').onclick=()=>follow(parentFolder);
+$('browse').onclick=()=>follow($('folders').value);
+$('folders').ondblclick=$('browse').onclick;
+$('folders').onkeydown=event=>{if(event.key==='Enter'){event.preventDefault();$('browse').click();}};
+$('start').onchange=()=>{$('startId').hidden=$('start').value!=='specific';};
+$('open').onchange=event=>{if(event.target.name==='mode')$('numberChoice').hidden=event.target.value!=='sequence';};
+$('open').onsubmit=event=>{
+ event.preventDefault();
+ const form=new FormData(event.currentTarget),mode=form.get('mode'),numberChoice=form.get('numbers');
+ if(mode==='sequence'&&!numberChoice){report('Choose whether to use filename numbers.',true);return;}
+ const start=$('start').value;
+ let url='/review';
+ if(start==='specific'){
+  const id=$('startId').value.trim().toLowerCase().replace(/^sequence_/,'');
+  if(!/^\d+$/.test(id)){report('Enter a sequence number.',true);return;}
+  url+='?sequence='+encodeURIComponent('sequence_'+id.padStart(4,'0'));
+ }else if(start!=='resume')url+='?start='+start;
+ submit('/api/open',{folder:currentFolder,mode,numbers:numberChoice==='yes'},url);
+};
+$('export').onsubmit=event=>{event.preventDefault();submit('/api/export',{name:$('exportName').value.trim()});};
+(async()=>{
+ try{
+  await browse('.');
+  const job=await api('/api/edit-status');
+  if(job)showJob(job);
+  if(job?.state==='running'){
+   busy=true;
+   document.querySelectorAll('section').forEach(node=>node.inert=true);
+   await waitFor(job.id);
+   await browse(currentFolder);
+   busy=false;
+   document.querySelectorAll('section').forEach(node=>node.inert=false);
+  }
+ }catch(error){report(error.message,true);busy=false;document.querySelectorAll('section').forEach(node=>node.inert=false);}
+})();
+</script>
+</html>

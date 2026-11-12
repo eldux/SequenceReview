@@ -1,0 +1,29 @@
+services:
+  sequence-review:
+    build: .
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 5m
+    ports:
+      - "127.0.0.1:${SEQUENCE_REVIEW_PORT:-8765}:8765"
+    environment:
+      SEQUENCE_REVIEW_MOUNT_ID: ${SEQUENCE_REVIEW_DATA:-./data}
+    volumes:
+      - type: bind
+        source: ${SEQUENCE_REVIEW_DATA:-./data}
+        target: /data
+        read_only: true
+      - type: bind
+        source: ${SEQUENCE_REVIEW_EXPORTS:-./exports}
+        target: /exports
+      - review-state:/state
+      - model-cache:/models
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8765/health',timeout=2).close()"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+volumes:
+  review-state:
+  model-cache:
