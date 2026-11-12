@@ -4,7 +4,8 @@ param(
     [string]$DataFolder = (Join-Path $PSScriptRoot 'data'),
     [string]$ExportFolder = (Join-Path $PSScriptRoot 'exports'),
     [ValidateRange(1,65535)][int]$Port = 8765,
-    [switch]$NoBrowser
+    [switch]$NoBrowser,
+    [switch]$Gpu
 )
 $ErrorActionPreference = 'Stop'
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
@@ -22,7 +23,9 @@ $env:SEQUENCE_REVIEW_EXPORTS = (Resolve-Path -LiteralPath $ExportFolder).Path.Re
 $env:SEQUENCE_REVIEW_PORT = "$Port"
 Push-Location -LiteralPath $PSScriptRoot
 try {
-    docker compose up --build --detach --wait
+    $compose = @('compose','-f','compose.yaml')
+    if ($Gpu) { $compose += @('-f','compose.gpu.yaml') }
+    docker @compose up --build --detach --wait
     if ($LASTEXITCODE -ne 0) { throw 'Docker Compose could not start Sequence Review.' }
 } finally {
     Pop-Location

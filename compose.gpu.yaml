@@ -1,0 +1,12 @@
+services:
+  sequence-review:
+    build:
+      args:
+        TORCH_INDEX: cu128
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

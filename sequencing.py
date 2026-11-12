@@ -19,10 +19,24 @@ def road_crop(path):
     return image.crop((int(.12*w), int(.12*h), max(int(.98*w),1), max(int(.65*h),1)))
 
 
-def embeddings(paths, progress):
+def inference_device(torch, requested):
+    if requested not in ('auto','cpu','cuda'):
+        raise ValueError('Choose Auto, CPU, or NVIDIA GPU for inference.')
+    if requested=='cpu':
+        return 'cpu'
+    if torch.cuda.is_available():
+        return 'cuda'
+    if requested=='cuda':
+        raise ValueError('No NVIDIA GPU is available in this container. Start with -Gpu or compose.gpu.yaml, or select CPU.')
+    return 'cpu'
+
+
+def embeddings(paths, progress, *, inference='auto'):
     import torch
     torch.set_num_threads(max(1, min(4, os.cpu_count() or 1)))
-    progress(8, 'Loading DINOv2 (first use may download the model)')
+    device = inference_device(torch,inference)
+    device_label = f'NVIDIA GPU ({torch.cuda.get_device_name()})' if device=='cuda' else 'CPU'
+    progress(8, f'Loading DINOv2 on {device_label} (first use may download the model)')
     # A locally cached Meta checkout can also supply the same small model.
     local = os.getenv('SEQUENCE_REVIEW_DINO_REPO')
     if local:
@@ -32,7 +46,6 @@ def embeddings(paths, progress):
     else:
         from transformers import AutoModel
         model = AutoModel.from_pretrained(MODEL, use_safetensors=True).eval()
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model = model.to(device)
     mean = np.array([.485,.456,.406],dtype=np.float32)
     std = np.array([.229,.224,.225],dtype=np.float32)
@@ -47,7 +60,7 @@ def embeddings(paths, progress):
             features = model(tensor) if local else model(pixel_values=tensor).last_hidden_state[:,0]
             output.append(torch.nn.functional.normalize(features.float(),dim=1).cpu().numpy())
             progress(10+int(45*min(start+len(batch),len(paths))/len(paths)),
-                     f'Computed visual features for {start+len(batch)} of {len(paths)} images')
+                     f'Computed visual features on {device_label} for {start+len(batch)} of {len(paths)} images')
     return np.concatenate(output)
 
 
@@ -113,10 +126,10 @@ def numeric_candidates(paths):
     return candidates
 
 
-def propose_sequences(paths, use_numbers, progress):
+def propose_sequences(paths, use_numbers, progress, *, inference='auto'):
     if len(paths)<2:
         return [[0]] if paths else []
-    vectors = embeddings(paths,progress)
+    vectors = embeddings(paths,progress,inference=inference)
     near = numeric_candidates(paths) if use_numbers else set()
     candidates = set(near)
     neighbors = min(len(paths),13)

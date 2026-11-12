@@ -70,13 +70,16 @@ class Service:
                     mode = payload.get('mode')
                     folder = payload.get('folder')
                     numeric = payload.get('numbers')
+                    inference = payload.get('inference','auto')
                     if mode not in ('open','sequence') or not isinstance(folder,str):
                         raise ValueError('Choose a folder and a workflow.')
                     if mode=='sequence' and type(numeric) is not bool:
                         raise ValueError('Choose whether filenames should help identify sequences.')
+                    if mode=='sequence' and inference not in ('auto','cpu','cuda'):
+                        raise ValueError('Choose Auto, CPU, or NVIDIA GPU for inference.')
                     if mode=='open':
                         numeric = False
-                    catalog = Catalog.open(self.root,self.state,folder,mode,numeric,progress)
+                    catalog = Catalog.open(self.root,self.state,folder,mode,numeric,progress,inference=inference)
                     with self.edit_lock:
                         write(self.state/'current.json',{'key':catalog.key})
                         self.current = catalog
@@ -146,7 +149,8 @@ def main():
                 if method=='GET' and route=='/source':
                     archive = BytesIO()
                     files = ('app.py','catalog.py','sequencing.py','index.html','review.html','Dockerfile',
-                             'compose.yaml','requirements.txt','README.md','LICENSE','.dockerignore','.gitignore','start.ps1')
+                             'compose.yaml','compose.gpu.yaml','requirements.txt','README.md','LICENSE',
+                             '.dockerignore','.gitignore','start.ps1')
                     with ZipFile(archive,'w',ZIP_DEFLATED) as bundle:
                         for file in files:
                             bundle.write(APP/file,file)

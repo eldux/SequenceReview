@@ -109,7 +109,7 @@ class Catalog:
         self.commit(doc)
 
     @classmethod
-    def open(cls, root, state_dir, folder, mode, numeric, progress):
+    def open(cls, root, state_dir, folder, mode, numeric, progress, *, inference='auto'):
         source = within(root, folder)
         if not source.is_dir():
             raise ValueError('Choose a folder that exists.')
@@ -156,7 +156,7 @@ class Catalog:
             from sequencing import propose_sequences
             ids = list(frames)
             paths = [within(root, frames[i]['path']) for i in ids]
-            components = propose_sequences(paths, numeric, progress)
+            components = propose_sequences(paths, numeric, progress, inference=inference)
             groups = {sequence_id(i): [ids[j] for j in component]
                       for i, component in enumerate(components, 1)}
 

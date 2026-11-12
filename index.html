@@ -43,6 +43,12 @@ button{cursor:pointer}button:disabled{opacity:.45;cursor:default}
 <legend>Use filename numbers as sequence clues?</legend>
 <label><input type="radio" name="numbers" value="yes"> Yes, consider nearby frame numbers and verify visually</label>
 <label><input type="radio" name="numbers" value="no"> No, use image content only</label>
+<label for="inference">Inference device</label>
+<select id="inference" name="inference">
+<option value="auto">Auto (GPU when available)</option>
+<option value="cuda">NVIDIA GPU</option>
+<option value="cpu">CPU</option>
+</select>
 </fieldset>
 </fieldset>
 <div class="row">
@@ -123,7 +129,7 @@ $('open').onsubmit=event=>{
   if(!/^\d+$/.test(id)){report('Enter a sequence number.',true);return;}
   url+='?sequence='+encodeURIComponent('sequence_'+id.padStart(4,'0'));
  }else if(start!=='resume')url+='?start='+start;
- submit('/api/open',{folder:currentFolder,mode,numbers:numberChoice==='yes'},url);
+ submit('/api/open',{folder:currentFolder,mode,numbers:numberChoice==='yes',inference:form.get('inference')},url);
 };
 $('export').onsubmit=event=>{event.preventDefault();submit('/api/export',{name:$('exportName').value.trim()});};
 (async()=>{

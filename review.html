@@ -13,7 +13,7 @@ main{padding:12px 18px}#status{color:#bacbd9}#big{display:flex;justify-content:c
 #big img{max-width:100%;max-height:58vh;object-fit:contain}#selectedName{font-weight:600}
 .frames{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
 .frame{border:2px solid #344b60;background:#1d2b39;padding:5px;border-radius:5px;min-width:0}
-.frame.active{border-color:#7acff2}.frame.flagged{border-color:#ff8191;background:#402735}
+.frame.active{border-color:#7acff2}
 .frame img{width:100%;aspect-ratio:4/3;object-fit:contain;cursor:pointer}.caption{font-size:13px;word-break:break-word}
 .frame button{width:100%;margin-top:4px;font-size:13px}.frame input{width:100%;font-size:13px;margin-top:5px}
 #sequenceNote{min-width:270px;flex:1}small{color:#b6c9db}[hidden]{display:none!important}
@@ -27,7 +27,7 @@ main{padding:12px 18px}#status{color:#bacbd9}#big{display:flex;justify-content:c
 #sequenceTable td{background:#1d2b39;border-block:1px solid #344b60}
 #sequenceTable tr{scroll-margin-top:calc(var(--review-header-height,54px) + 8px)}
 #sequenceTable tr.source td{border-color:#7acff2}#sequenceTable tr.destination td{border-color:#8ed5a8}
-.sequenceStrip{display:flex;gap:8px;overflow-x:auto;min-height:calc(clamp(105px,15vw,150px) + 24px);padding-bottom:5px}
+.sequenceStrip{display:flex;gap:8px;overflow-x:auto;height:calc(clamp(105px,15vw,150px) + 42px);padding-bottom:5px}
 .sequenceStrip .tableFrame{flex:0 0 200px}
 .tableFrame{display:block;min-width:0}
 .tableFrame img{display:block;width:100%;height:clamp(105px,15vw,150px);object-fit:contain;background:#080d13;border-radius:4px}
@@ -61,7 +61,7 @@ main{padding:12px 18px}#status{color:#bacbd9}#big{display:flex;justify-content:c
 .detail-view #reviewSidebar :is(button,input){padding:5px 7px;min-width:0;width:100%;font-size:13px}
 .detail-view #status{font-size:12px;white-space:pre-line;margin-bottom:7px}
 .detail-view #frameControls,.detail-view #multiNav{grid-template-columns:repeat(2,minmax(0,1fr))}
-.detail-view #selectedName,.detail-view #flagSelected,.detail-view #original,.detail-view #reviewNext{grid-column:1/-1}
+.detail-view #selectedName,.detail-view #original,.detail-view #reviewNext{grid-column:1/-1}
 .detail-view #original{font-size:13px}
 .detail-view #selectedName{font-size:12px;color:#bacbd9}
 .detail-view #sequenceNote{min-width:0}
@@ -126,7 +126,7 @@ main{padding:12px 18px}#status{color:#bacbd9}#big{display:flex;justify-content:c
 <section class="reviewSection" aria-labelledby="frameHeading">
 <h2 id="frameHeading">Current frame</h2>
 <div id="frameControls" class="controls"><span id="selectedName"></span><button id="previousFrame">← Image</button><button id="nextFrame">Image →</button>
-<button id="flagSelected">Flag outlier · O</button><a id="original">Open original size</a></div>
+<a id="original">Open original size</a></div>
 </section>
 <section class="reviewSection" aria-labelledby="reorganizeHeading">
 <h2 id="reorganizeHeading">Move or join</h2>
@@ -170,7 +170,9 @@ const solo=location.pathname==='/singletons';
 const table=location.pathname==='/table';
 const detail=!solo&&!table;
 const $=id=>document.getElementById(id);
+const pageParams=new URLSearchParams(location.search);
 if(table){
+ history.scrollRestoration='manual';
  document.body.classList.add('table-view');
  const header=document.querySelector('header');
  new ResizeObserver(()=>document.body.style.setProperty('--review-header-height',header.offsetHeight+'px')).observe(header);
@@ -187,6 +189,7 @@ let joinSource='',joinDestination='';
 const accessFragment='';
 let externalJobId='';
 let viewKey='nienaber-sequence-outlier-position-'+(solo?'solo':'multi');
+let stripOffsets={};
 async function api(path,body){
  const response=await fetch(path,{method:body?'POST':'GET',headers:{'X-Review-Token':token,...(data?{'X-Review-Workspace':data.sequence_numbering_version}:{}),...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined});
  const result=await response.json();if(!response.ok)throw Error(result.error);return result;
@@ -265,40 +268,21 @@ viewerScroll.onclick=event=>{if(event.target===viewerScroll)imageViewer.close();
 $('closeViewer').onclick=()=>imageViewer.close();
 imageViewer.onclose=()=>{if(!imageViewer.open)viewerImage.removeAttribute('src');};
 window.addEventListener('resize',()=>{if(imageViewer.open)fitViewerImage();});
-function isFlagged(frame){return state.images[frame.id]?.outlier===true;}
 function isReviewed(sequence){return state.sequences[sequence.id]?.reviewed===true;}
 function save(patch){
  if(editing)return queue;
  saving++;$('saveState').textContent='Saving…';$('saveState').className='';
  queue=queue.then(()=>api('/api/flags',patch)).then(result=>{
-  state=result;saving--;if(!saving)$('saveState').textContent='Review saved';renderStatus();paintFlags();
- }).catch(error=>{saving--; $('saveState').textContent='Save failed: '+error.message+' — click the flag again to retry';$('saveState').className='error';});
+  state=result;saving--;if(!saving)$('saveState').textContent='Review saved';renderStatus();
+ }).catch(error=>{saving--; $('saveState').textContent='Save failed: '+error.message+' — try saving again';$('saveState').className='error';});
  return queue;
 }
-function toggle(frames){save({type:'outlier',images:frames.map(frame=>frame.id),outlier:!frames.every(isFlagged)});}
 function renderStatus(){
  if(table){$('status').textContent=(visible.length===data.sequences.length?visible.length:visible.length+' of '+data.sequences.length)+' sequences';return;}
- const flags=Object.values(state.images).filter(entry=>entry.outlier).length;
- if(solo){const total=data.sequences.filter(sequence=>sequence.members===1).length;$('status').textContent=visible.length+' solo sequences shown · '+total+' total · '+flags+' files flagged across dataset';return;}
+ if(solo){const total=data.sequences.filter(sequence=>sequence.members===1).length;$('status').textContent=visible.length+' solo sequences shown · '+total+' total';return;}
  const sequence=visible[position];
  $('status').textContent=sequence?sequence.id+' · '+(position+1)+' / '+visible.length+'\n'+
   sequence.members+(sequence.members===1?' frame':' frames')+' · '+(isReviewed(sequence)?'Reviewed':'Unreviewed')+'\n'+sequence.group:'No matching sequences';
-}
-function paintFlags(){
- document.querySelectorAll('.frame').forEach(card=>{
-  const sequence=data.sequences.find(sequence=>sequence.id===card.dataset.sequence);
-  const frames=sequence.frames.filter(frame=>frame.id===card.dataset.id);
-  const flagged=frames.every(isFlagged);
-  card.classList.toggle('flagged',flagged);
-  const button=card.querySelector('button');
-  button.textContent=flagged?'✓ Outlier flagged — undo':'Flag outlier';
-  button.setAttribute('aria-pressed',String(flagged));
- });
- if(!solo&&visible[position]){
-  const frame=visible[position].frames[frameIndex];
-  $('flagSelected').classList.toggle('on',isFlagged(frame));
-  $('flagSelected').textContent=isFlagged(frame)?'✓ Outlier flagged · O':'Flag outlier · O';
- }
 }
 function selectFrame(index){
  const sequence=visible[position];if(!sequence)return;
@@ -317,19 +301,20 @@ function selectFrame(index){
    else if(cardBounds.right>stripBounds.right)strip.scrollLeft+=cardBounds.right-stripBounds.right;
   }
  });
- $('flagSelected').onclick=()=>toggle([frame]);
- paintFlags();
+
 }
 function card(sequence,frame){
- const item=document.createElement('div');item.className='frame';item.dataset.id=frame.id;item.dataset.sequence=sequence.id;item.dataset.original=frame.original;
+ const item=document.createElement('div');item.className='frame';item.dataset.id=frame.id;
  const image=new Image();image.loading='lazy';image.src=url(frame,true);image.alt=frame.original;
  image.onclick=()=>{if(solo)openViewer(frame);else selectFrame(sequence.frames.findIndex(f=>f.id===frame.id));};
  const caption=document.createElement('div');caption.className='caption';
  caption.textContent=(solo?sequence.id+' · '+sequence.group+' · ':'')+frame.original+' · '+(frame.name.split('.rf.')[1]||frame.name).slice(0,8);caption.title=frame.name;
- const flag=document.createElement('button');
- flag.onclick=()=>toggle([frame]);
- item.append(image,caption,flag);
+ item.append(image,caption);
  if(solo){
+  const details=document.createElement('a');
+  details.href='/review'+'?sequence='+encodeURIComponent(sequence.id)+accessFragment;
+  details.textContent='Open to move frame';
+  item.append(details);
   const note=document.createElement('input');note.placeholder='Fits in sequence_… / note';note.value=state.sequences[sequence.id]?.note||'';
   note.setAttribute('aria-label','Suggested destination for '+sequence.id);
   note.onchange=()=>save({type:'sequence',sequence:sequence.id,note:note.value});
@@ -405,9 +390,41 @@ const stripObserver=new IntersectionObserver(entries=>{
   if(!isIntersecting)continue;
   stripObserver.unobserve(target);
   const sequence=data.sequences.find(item=>item.id===target.dataset.sequence);
-  if(target.isConnected&&sequence)target.append(...sequence.frames.map(tableFrame));
+  if(target.isConnected&&sequence){
+   target.append(...sequence.frames.map(tableFrame));
+   target.scrollLeft=stripOffsets[sequence.id]||0;
+  }
  }
 },{rootMargin:'350px 0px'});
+
+function tablePositionKey(){return 'sequence-review-table-position-'+data.sequence_numbering_version;}
+function saveTablePosition(){
+ if(!table||!data)return;
+ const headerBottom=document.querySelector('header').getBoundingClientRect().bottom;
+ const row=Array.from($('tableRows').rows).find(row=>!row.hidden&&row.getBoundingClientRect().bottom>headerBottom);
+ for(const strip of $('tableRows').querySelectorAll('.sequenceStrip')){
+  if(strip.firstChild)stripOffsets[strip.dataset.sequence]=strip.scrollLeft;
+ }
+ const position={row:row?.id,offset:row?row.getBoundingClientRect().top-headerBottom:0,
+                 y:window.scrollY,search:$('search').value,strips:stripOffsets,joinSource,joinDestination};
+ try{sessionStorage.setItem(tablePositionKey(),JSON.stringify(position));}catch(error){}
+}
+function restoreTablePosition(){
+ let saved;
+ try{saved=JSON.parse(sessionStorage.getItem(tablePositionKey()));}catch(error){}
+ if(!saved)return false;
+ $('search').value=saved.search||'';
+ stripOffsets=saved.strips||{};
+ const currentSequence=id=>data.sequences.some(sequence=>sequence.id===id)?id:'';
+ joinSource=currentSequence(saved.joinSource);
+ joinDestination=currentSequence(saved.joinDestination);
+ filter();
+ const row=$(data.sequence_aliases[saved.row]||saved.row);
+ const headerBottom=document.querySelector('header').getBoundingClientRect().bottom;
+ window.scrollTo(0,row?window.scrollY+row.getBoundingClientRect().top-headerBottom-saved.offset:saved.y);
+ return true;
+}
+if(table)window.addEventListener('pagehide',saveTablePosition);
 
 function tableFrame(frame){
  const link=document.createElement('a');link.className='tableFrame';linkViewer(link,frame);
@@ -451,7 +468,8 @@ function renderTable(){
   row.insertCell().append(tableFrame(sequence.frames.at(-1)));
   const cell=row.insertCell();
   const controls=document.createElement('div');controls.className='controls tableRowControls';
-  const details=document.createElement('a');details.href='/review?sequence='+encodeURIComponent(sequence.id)+accessFragment;
+  const details=document.createElement('a');details.href='/review?sequence='+encodeURIComponent(sequence.id)+'&from=table'+accessFragment;
+  details.addEventListener('click',saveTablePosition);
   details.textContent=sequence.id+' · '+sequence.members+(sequence.members===1?' frame':' frames');
   controls.append(details);
   for(const [role,label] of [['source','Join from'],['destination','Join into']]){
@@ -512,7 +530,10 @@ function render(){
   $('emptyDetail').hidden=!!sequence;
   if(sequence){
    $('sequenceSelect').value=sequence.id;
-   $('tableView').href='/table?sequence='+encodeURIComponent(sequence.id)+accessFragment;
+   const fromTable=pageParams.get('from')==='table';
+   const tableSequence=fromTable?pageParams.get('sequence'):sequence.id;
+   $('tableView').href='/table?sequence='+encodeURIComponent(tableSequence||sequence.id)+(fromTable?'&resume=1':'')+accessFragment;
+   $('tableView').textContent=fromTable?'Back to table':'Sequence table';
    for(const frame of sequence.frames)$('frames').append(card(sequence,frame));
    $('sequenceNote').value=state.sequences[sequence.id]?.note||'';
    selectFrame(0);
@@ -522,7 +543,7 @@ function render(){
   $('nextSequence').disabled=position+1>=visible.length;
   $('reviewNext').disabled=!sequence;
  }
- renderStatus();paintFlags();
+ renderStatus();
 }
 function moveSequence(step,unreviewed=false){
  for(let i=position+step;i>=0&&i<visible.length;i+=step){
@@ -544,7 +565,6 @@ document.addEventListener('keydown',event=>{
  if(event.key==='ArrowRight'){event.preventDefault();selectFrame(frameIndex+1);}
  if(event.key==='PageUp'){event.preventDefault();moveSequence(-1);}
  if(event.key==='PageDown'){event.preventDefault();moveSequence(1);}
- if(event.key.toLowerCase()==='o'&&!event.repeat){event.preventDefault();$('flagSelected').click();}
  if(event.key==='Enter'&&!event.repeat&&focused!=='BUTTON'){event.preventDefault();$('reviewNext').click();}
 });
 (async()=>{
@@ -553,20 +573,20 @@ document.addEventListener('keydown',event=>{
   $('title').textContent=table?'Sequence table':solo?'All solo-image sequences':'All sequences';
   $('multi').hidden=solo||table;$('multiNav').hidden=solo||table;$('sequenceSelect').hidden=solo||table;
   $('sequenceTable').hidden=!table;$('tableControls').hidden=!table;$('tableJoinControls').hidden=!table;
-  $('otherView').href=(solo||table?'/review':'/singletons')+accessFragment;
+  $('otherView').href=(table?'/review?from=table':solo?'/review':'/singletons')+accessFragment;
   $('otherView').textContent=solo||table?'Sequence reviewer':'Solo sequences';
   $('tableView').hidden=table;$('tableView').href='/table'+accessFragment;$('tableView').textContent='Sequence table';
-  $('hint').textContent=table?'Choose Join from and Join into on two rows. Click any frame to enlarge it.':solo?'One card per solo sequence. Flag an outlier or note where it belongs. Click any frame to enlarge it.':
-   '← / → image · Page Up / Down sequence · O flag outlier · Enter mark reviewed and next. Flagging affects only the selected file, including when frame IDs repeat.';
+  $('hint').textContent=table?'Choose Join from and Join into on two rows. Click any frame to enlarge it.':solo?'Click a frame to enlarge it, or open its sequence to move it.':
+   '← / → image · Page Up / Down sequence · Enter mark reviewed and next.';
   let previous;
   if(data.sequence_numbering_version)viewKey+='-'+data.sequence_numbering_version;
   try{previous=localStorage.getItem(viewKey);}catch(error){}
-  const params=new URLSearchParams(location.search);
-  previous=params.get('sequence')||previous;
-  if(params.get('start')==='first')previous=undefined;
-  if(params.get('start')==='unreviewed')previous=data.sequences.find(item=>!isReviewed(item))?.id;
-  filter();
-  if(table&&previous)$(previous)?.scrollIntoView({block:'start'});
+  previous=pageParams.get('sequence')||previous;
+  if(pageParams.get('start')==='first')previous=undefined;
+  if(pageParams.get('start')==='unreviewed')previous=data.sequences.find(item=>!isReviewed(item))?.id;
+  const restored=table&&(pageParams.has('resume')||!pageParams.has('sequence'))&&restoreTablePosition();
+  if(!restored)filter();
+  if(table&&!restored&&previous)$(data.sequence_aliases[previous]||previous)?.scrollIntoView({block:'start'});
   if(!solo&&!table){const found=visible.findIndex(s=>s.id===(data.sequence_aliases?.[previous]||previous));if(found>=0){position=found;render();}}
   $('saveState').textContent=table?'':'Review saved automatically';
  }catch(error){$('saveState').textContent=error.message;$('saveState').className='error';}
@@ -594,7 +614,7 @@ setInterval(async()=>{
    $('saveState').textContent='Updated from saved edits';
   }else if(!table){
    const next=await api('/api/flags');
-   if(current===data&&!saving&&JSON.stringify(next)!==JSON.stringify(state)){state=next;paintFlags();renderStatus();}
+   if(current===data&&!saving&&JSON.stringify(next)!==JSON.stringify(state)){state=next;renderStatus();}
   }
  }catch(error){}
 },5000);
